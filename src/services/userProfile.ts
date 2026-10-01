@@ -1,7 +1,7 @@
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import { db } from '../firebase';
-import { UserProfile } from '../types';
+import { MemberDetails, UserProfile } from '../types';
 
 export async function createUserProfile(user: User): Promise<UserProfile> {
   const profile: UserProfile = {
@@ -48,4 +48,16 @@ export function isProfileComplete(profile: UserProfile | null): boolean {
     !!profile.phone &&
     !!profile.college
   );
+}
+
+export function detailsFromProfile(profile: UserProfile): MemberDetails {
+  return {
+    phone: profile.phone || '',
+    branch: profile.branch || profile.department || '',
+    college: profile.college || '',
+    department: profile.department || profile.branch || '',
+    year: profile.year || '',
+    dob: profile.dob || '',
+    diet: profile.diet || '',
+  };
 }

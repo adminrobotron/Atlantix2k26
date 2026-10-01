@@ -14,7 +14,7 @@ import {
   DocumentData,
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Team, TeamMemberProfile } from '../types';
+import { MemberDetails, Team, TeamMemberProfile } from '../types';
 
 const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -44,26 +44,27 @@ export async function createTeam(
   leaderUid: string,
   leaderName: string,
   leaderEmail: string,
-  phone: string,
-  branch: string,
-  college: string,
-  teamName?: string
+  details: MemberDetails
 ): Promise<Team> {
   const teamCode = await generateTeamCode();
   const member: TeamMemberProfile = {
     uid: leaderUid,
     displayName: leaderName,
     email: leaderEmail,
-    phone,
-    branch,
-    college,
+    phone: details.phone,
+    branch: details.branch,
+    college: details.college,
+    department: details.department,
+    year: details.year,
+    dob: details.dob,
+    diet: details.diet,
     role: 'leader',
     joinedAt: new Date().toISOString(),
   };
 
   const teamData = {
     teamCode,
-    teamName: teamName || `${leaderName}'s Team`,
+    teamName: details.teamName || `${leaderName}'s Team`,
     leader: { uid: leaderUid, displayName: leaderName, email: leaderEmail },
     members: [member],
     selectedTechEventId: '',
@@ -102,9 +103,7 @@ export async function joinTeamByCode(
   uid: string,
   displayName: string,
   email: string,
-  phone: string,
-  branch: string,
-  college: string
+  details: MemberDetails
 ): Promise<Team> {
   return runTransaction(db, async (transaction) => {
     const q = query(collection(db, 'teams'), where('teamCode', '==', teamCode.toUpperCase()));
@@ -122,9 +121,13 @@ export async function joinTeamByCode(
       uid,
       displayName,
       email,
-      phone,
-      branch,
-      college,
+      phone: details.phone,
+      branch: details.branch,
+      college: details.college,
+      department: details.department,
+      year: details.year,
+      dob: details.dob,
+      diet: details.diet,
       role: 'member',
       joinedAt: new Date().toISOString(),
     };

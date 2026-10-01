@@ -1,5 +1,6 @@
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+import { DietPreference } from '../types';
 
 interface MemberData {
   fullName: string;
@@ -8,6 +9,8 @@ interface MemberData {
   email: string;
   branch: string;
   college: string;
+  year?: string;
+  diet?: DietPreference | '';
 }
 
 interface RegistrationPayload {
@@ -35,6 +38,9 @@ export async function saveRegistration(
       phone: m.phone,
       branch: m.branch,
       college: m.college,
+      dob: m.dob || '',
+      year: m.year || '',
+      diet: m.diet || '',
       memberId: `${regId}-M${i + 1}`,
       checkedIn: false,
     }));

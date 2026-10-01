@@ -1,18 +1,20 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
+import { UserProfile } from '../types';
 import { createTeam } from '../services/team';
-import { updateUserProfile } from '../services/userProfile';
-import { Loader2, Phone, Building2, GraduationCap } from 'lucide-react';
+import { detailsFromProfile, updateUserProfile } from '../services/userProfile';
+import { Loader2, Phone, Building2, GraduationCap, CalendarDays, Salad, Drumstick } from 'lucide-react';
 
 interface CreateTeamFormProps {
   user: User;
+  userProfile: UserProfile;
   onTeamCreated: () => void;
 }
 
-export const CreateTeamForm: React.FC<CreateTeamFormProps> = ({ user, onTeamCreated }) => {
-  const [phone, setPhone] = useState('');
-  const [branch, setBranch] = useState('');
-  const [college, setCollege] = useState('');
+export const CreateTeamForm: React.FC<CreateTeamFormProps> = ({ user, userProfile, onTeamCreated }) => {
+  const [phone, setPhone] = useState(userProfile.phone || '');
+  const [branch, setBranch] = useState(userProfile.department || userProfile.branch || '');
+  const [college, setCollege] = useState(userProfile.college || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [touched, setTouched] = useState<Record<string, boolean>>({});
@@ -57,15 +59,27 @@ export const CreateTeamForm: React.FC<CreateTeamFormProps> = ({ user, onTeamCrea
     setLoading(true);
     setError('');
     try {
+      const displayName = userProfile.displayName || user.displayName || user.email?.split('@')[0] || 'Leader';
+      const details = detailsFromProfile({
+        ...userProfile,
+        phone: phone.trim(),
+        department: branch.trim(),
+        branch: branch.trim(),
+        college: college.trim(),
+      });
       await createTeam(
         user.uid,
-        user.displayName || user.email?.split('@')[0] || 'Leader',
-        user.email || '',
-        phone.trim(),
-        branch.trim(),
-        college.trim()
+        displayName,
+        userProfile.email || user.email || '',
+        details
       );
-      await updateUserProfile(user.uid, { phone: phone.trim(), branch: branch.trim(), college: college.trim() });
+      await updateUserProfile(user.uid, {
+        displayName,
+        phone: details.phone,
+        branch: details.branch,
+        department: details.department,
+        college: details.college,
+      });
       onTeamCreated();
     } catch (err: any) {
       setError(err.message || 'Failed to create team');
@@ -90,8 +104,26 @@ export const CreateTeamForm: React.FC<CreateTeamFormProps> = ({ user, onTeamCrea
       <form onSubmit={handleSubmit} className="space-y-4 font-bricolage" noValidate>
         <div className="bg-[#f4ead5] p-3 comic-border-thick">
           <p className="text-xs text-zinc-500 font-bold uppercase">TEAM LEADER</p>
-          <p className="font-anton text-lg text-[#1a1a1a]">{user.displayName || user.email}</p>
-          <p className="text-sm text-zinc-600">{user.email}</p>
+          <p className="font-anton text-lg text-[#1a1a1a]">{userProfile.displayName || user.displayName || user.email}</p>
+          <p className="text-sm text-zinc-600">{userProfile.email || user.email}</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 mt-2 font-bricolage text-sm">
+            <p className="flex items-center gap-1.5">
+              <CalendarDays className="w-3.5 h-3.5 text-zinc-400" />
+              <span><span className="font-bold text-zinc-500">DOB:</span> {userProfile.dob || '-'}</span>
+            </p>
+            <p>
+              <span className="font-bold text-zinc-500">Year:</span> {userProfile.year || '-'}
+            </p>
+            <p className="flex items-center gap-1.5 sm:col-span-2">
+              {userProfile.diet === 'non-veg' ? (
+                <Drumstick className="w-3.5 h-3.5 text-[#bb0013]" />
+              ) : (
+                <Salad className="w-3.5 h-3.5 text-[#00c853]" />
+              )}
+              <span className="font-bold text-zinc-500">Food:</span>{' '}
+              {userProfile.diet === 'veg' ? 'Veg' : userProfile.diet === 'non-veg' ? 'Non-Veg' : '-'}
+            </p>
+          </div>
         </div>
 
         <div className="space-y-1">

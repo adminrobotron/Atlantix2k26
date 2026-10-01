@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
+import { MemberDetails, UserProfile } from '../types';
 import { getTeamByCode, joinTeamByCode } from '../services/team';
-import { updateUserProfile } from '../services/userProfile';
-import { Loader2, Search, Users, ArrowLeft } from 'lucide-react';
+import { detailsFromProfile } from '../services/userProfile';
+import { Loader2, Search, Users, ArrowLeft, CheckCircle2 } from 'lucide-react';
 
 interface JoinTeamFormProps {
   user: User;
+  userProfile: UserProfile;
   onTeamJoined: () => void;
   onBack?: () => void;
 }
 
-export const JoinTeamForm: React.FC<JoinTeamFormProps> = ({ user, onTeamJoined, onBack }) => {
+export const JoinTeamForm: React.FC<JoinTeamFormProps> = ({ user, userProfile, onTeamJoined, onBack }) => {
   const [teamCode, setTeamCode] = useState('');
   const [lookingUp, setLookingUp] = useState(false);
   const [joining, setJoining] = useState(false);
@@ -18,6 +20,19 @@ export const JoinTeamForm: React.FC<JoinTeamFormProps> = ({ user, onTeamJoined, 
   const [teamPreview, setTeamPreview] = useState<any>(null);
   const [touched, setTouched] = useState(false);
   const [fieldError, setFieldError] = useState('');
+
+  const details: MemberDetails = detailsFromProfile(userProfile);
+
+  const missing = [
+    { label: 'Full name', ok: !!userProfile.displayName },
+    { label: 'Phone number', ok: !!details.phone },
+    { label: 'Date of birth', ok: !!details.dob },
+    { label: 'Department', ok: !!details.department },
+    { label: 'Year', ok: !!details.year },
+    { label: 'College', ok: !!details.college },
+    { label: 'Food preference', ok: !!details.diet },
+  ];
+  const isReady = missing.every(m => m.ok);
 
   const formatCode = (val: string) => {
     const clean = val.toUpperCase().replace(/[^A-Z0-9-]/g, '');
@@ -66,20 +81,17 @@ export const JoinTeamForm: React.FC<JoinTeamFormProps> = ({ user, onTeamJoined, 
   };
 
   const handleJoin = async () => {
-    if (!teamPreview) return;
+    if (!teamPreview || !isReady) return;
     setJoining(true);
     setError('');
     try {
       await joinTeamByCode(
         teamPreview.teamCode,
         user.uid,
-        user.displayName || user.email?.split('@')[0] || 'Member',
-        user.email || '',
-        '',
-        '',
-        ''
+        userProfile.displayName || user.displayName || user.email?.split('@')[0] || 'Member',
+        userProfile.email || user.email || '',
+        details
       );
-      await updateUserProfile(user.uid, {});
       onTeamJoined();
     } catch (err: any) {
       setError(err.message || 'Failed to join team');
@@ -139,6 +151,28 @@ export const JoinTeamForm: React.FC<JoinTeamFormProps> = ({ user, onTeamJoined, 
           <p className="text-[#bb0013] font-bricolage text-sm font-semibold bg-red-50 p-2 comic-border-thick">{error}</p>
         )}
 
+        <div className="bg-[#f4ead5] p-4 comic-border-thick">
+          <p className="text-xs font-bold uppercase text-zinc-500 mb-2">YOUR DETAILS</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 font-bricolage text-sm">
+            <p><span className="font-bold text-zinc-500">Name:</span> {userProfile.displayName || '-'}</p>
+            <p><span className="font-bold text-zinc-500">Phone:</span> {details.phone || '-'}</p>
+            <p><span className="font-bold text-zinc-500">DOB:</span> {details.dob || '-'}</p>
+            <p><span className="font-bold text-zinc-500">Department:</span> {details.department || '-'}</p>
+            <p><span className="font-bold text-zinc-500">Year:</span> {details.year || '-'}</p>
+            <p><span className="font-bold text-zinc-500">College:</span> {details.college || '-'}</p>
+            <p className="sm:col-span-2">
+              <span className="font-bold text-zinc-500">Food:</span>{' '}
+              {details.diet === 'veg' ? 'Veg' : details.diet === 'non-veg' ? 'Non-Veg' : '-'}
+            </p>
+          </div>
+          {!isReady && (
+            <p className="mt-3 text-[#bb0013] text-xs font-bold flex items-center gap-1">
+              <span className="inline-block w-1.5 h-1.5 bg-[#bb0013] rounded-full" />
+              Complete your profile before joining: {missing.filter(m => !m.ok).map(m => m.label).join(', ')}
+            </p>
+          )}
+        </div>
+
         {teamPreview && (
           <div className="bg-[#f4ead5] p-5 comic-border-thick space-y-3">
             <div className="flex items-center gap-2">
@@ -157,9 +191,9 @@ export const JoinTeamForm: React.FC<JoinTeamFormProps> = ({ user, onTeamJoined, 
                 </span>
               ))}
             </div>
-            <button onClick={handleJoin} disabled={joining}
+            <button onClick={handleJoin} disabled={joining || !isReady}
               className="w-full bg-[#00c853] hover:bg-[#00b248] text-white font-anton text-lg py-3 comic-border-thick shadow-comic uppercase cursor-pointer disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
-              {joining ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
+              {joining ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
               {joining ? 'JOINING...' : 'JOIN THIS TEAM'}
             </button>
           </div>

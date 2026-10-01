@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User } from 'firebase/auth';
-import { NavTab, Team } from '../types';
+import { NavTab, Team, UserProfile } from '../types';
 import { TECHNICAL_EVENTS, CIVILIAN_EVENTS } from '../data/events';
 import { updateTeamEvents } from '../services/team';
 import { CreateTeamForm } from './CreateTeamForm';
@@ -13,6 +13,7 @@ import { Zap, Users, UserCheck, ArrowLeft, Loader2, CheckCircle2, AlertTriangle 
 
 interface TeamDashboardProps {
   user: User;
+  userProfile: UserProfile;
   team: Team | null;
   onTeamChange: () => void;
   setActiveTab: (tab: NavTab) => void;
@@ -23,7 +24,7 @@ interface TeamDashboardProps {
 type TeamView = 'dashboard' | 'create' | 'join';
 
 export const TeamDashboard: React.FC<TeamDashboardProps> = ({
-  user, team, onTeamChange, setActiveTab, preselectedTechId, preselectedNonTechId
+  user, userProfile, team, onTeamChange, setActiveTab, preselectedTechId, preselectedNonTechId
 }) => {
   const [view, setView] = useState<TeamView>('dashboard');
   const [submitting, setSubmitting] = useState(false);
@@ -39,10 +40,10 @@ export const TeamDashboard: React.FC<TeamDashboardProps> = ({
   // No team — show create/join choice
   if (!team) {
     if (view === 'create') {
-      return <CreateTeamForm user={user} onTeamCreated={onTeamChange} />;
+      return <CreateTeamForm user={user} userProfile={userProfile} onTeamCreated={onTeamChange} />;
     }
     if (view === 'join') {
-      return <JoinTeamForm user={user} onTeamJoined={onTeamChange} onBack={() => setView('dashboard')} />;
+      return <JoinTeamForm user={user} userProfile={userProfile} onTeamJoined={onTeamChange} onBack={() => setView('dashboard')} />;
     }
     return (
       <div className="min-h-[60vh] flex items-center justify-center px-4">
@@ -84,11 +85,13 @@ export const TeamDashboard: React.FC<TeamDashboardProps> = ({
       await saveRegistration(newRegId, {
         members: team.members.map(m => ({
           fullName: m.displayName,
-          dob: '',
+          dob: m.dob || '',
           phone: m.phone,
           email: m.email,
-          branch: m.branch,
+          branch: m.branch || m.department || '',
           college: m.college,
+          year: m.year,
+          diet: m.diet,
         })),
         technicalEvent: selectedTechEvent?.title || '',
         nonTechnicalEvent: selectedNonTechEvent?.title || '',
@@ -280,10 +283,10 @@ export const TeamDashboard: React.FC<TeamDashboardProps> = ({
             members: team.members.map((m, i) => ({
               id: i + 1,
               fullName: m.displayName,
-              dob: '',
+              dob: m.dob || '',
               phone: m.phone,
               email: m.email,
-              branch: m.branch,
+              branch: m.branch || m.department || '',
               college: m.college,
             })),
             activeMemberIndex: 0,

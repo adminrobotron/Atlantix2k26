@@ -116,6 +116,10 @@ export interface TeamMemberProfile {
   phone: string;
   branch: string;
   college: string;
+  department: string;
+  year: string;
+  dob: string;
+  diet: DietPreference | '';
   role: 'leader' | 'member';
   joinedAt: string;
 }
@@ -140,6 +144,17 @@ export interface Team {
 }
 
 export type DietPreference = 'veg' | 'non-veg';
+
+export interface MemberDetails {
+  phone: string;
+  branch: string;
+  college: string;
+  department: string;
+  year: string;
+  dob: string;
+  diet: DietPreference | '';
+  teamName?: string;
+}
 
 export interface UserProfile {
   uid: string;

@@ -135,6 +135,7 @@ export function App() {
     return (
       <TeamDashboard
         user={user}
+        userProfile={userProfile}
         team={team}
         onTeamChange={refreshTeam}
         setActiveTab={setActiveTab}
