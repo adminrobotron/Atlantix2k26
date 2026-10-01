@@ -3,7 +3,7 @@ import { NavTab } from './types';
 import { ALL_EVENTS } from './data/events';
 import { useAuth } from './hooks/useAuth';
 import { useTeam } from './hooks/useTeam';
-import { signOut } from './services/auth';
+import { isAdminUser, signInWithEmail, signOut } from './services/auth';
 import { isProfileComplete } from './services/userProfile';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
@@ -26,8 +26,11 @@ export function App() {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [preselectedTechId, setPreselectedTechId] = useState<string>('');
   const [preselectedNonTechId, setPreselectedNonTechId] = useState<string>('');
-  const [adminUnlocked, setAdminUnlocked] = useState(false);
-  const [adminPassInput, setAdminPassInput] = useState('');
+  // null = not yet resolved, so the admin tab is not briefly visible to
+  // non-admins while the claim check is in flight.
+  const [adminUnlocked, setAdminUnlocked] = useState<boolean | null>(null);
+  const [adminEmail, setAdminEmail] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState('');
   const [adminSection, setAdminSection] = useState<NavTab>('home');
@@ -72,27 +75,50 @@ export function App() {
 
   const handleSignOut = async () => {
     await signOut();
-    setAdminUnlocked(false);
     setActiveTab('home');
   };
 
-  const verifyAdminPassword = async () => {
-    if (!adminPassInput.trim()) return;
+  // The admin CMS writes siteContent/main, which firestore.rules restricts to
+  // the `admin: true` custom claim. So the panel needs a real Firebase session
+  // carrying that claim, not just the shared password.
+  useEffect(() => {
+    let cancelled = false;
+    if (authLoading) return;
+    if (user) {
+      isAdminUser().then((isAdmin) => {
+        if (!cancelled) setAdminUnlocked(isAdmin);
+      });
+    } else {
+      setAdminUnlocked(false);
+    }
+    return () => { cancelled = true; };
+  }, [user, authLoading]);
+
+  const verifyAdminLogin = async () => {
+    if (!adminEmail.trim() || !adminPassword) {
+      setAdminError('Enter your admin email and password.');
+      return;
+    }
     setAdminLoading(true);
     setAdminError('');
     try {
-      const res = await fetch('/api/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: adminPassInput }),
-      });
-      if (res.ok) {
+      await signInWithEmail(adminEmail.trim(), adminPassword);
+      const isAdmin = await isAdminUser();
+      if (isAdmin) {
         setAdminUnlocked(true);
+        setAdminPassword('');
       } else {
-        setAdminError('Wrong password');
+        await signOut();
+        setAdminError('This account does not have admin access.');
       }
-    } catch {
-      setAdminError('Connection error. Try again.');
+    } catch (err: any) {
+      const code = err.code || '';
+      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password'
+        || code === 'auth/user-not-found') {
+        setAdminError('Invalid email or password.');
+      } else {
+        setAdminError(err.message || 'Sign-in failed.');
+      }
     } finally {
       setAdminLoading(false);
     }
@@ -227,7 +253,11 @@ export function App() {
         {activeTab === 'register' && renderRegister()}
 
         {activeTab === 'admin' && (
-          adminUnlocked ? (
+          adminUnlocked === null ? (
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <Loader2 className="w-8 h-8 animate-spin text-[#bb0013]" />
+            </div>
+          ) : adminUnlocked ? (
             <AdminView setActiveTab={setActiveTab} onSelectEvent={handleSelectEventModal} activeSection={adminSection} onControlsReady={setAdminControls} />
           ) : (
             <div className="flex items-center justify-center min-h-[60vh] px-4">
@@ -235,20 +265,33 @@ export function App() {
                 <div className="bg-[#1a1a1a] text-white p-4 comic-border-thick font-anton text-2xl tracking-wider">
                   ADMIN ACCESS
                 </div>
-                <p className="font-bricolage text-sm text-zinc-600">Enter the admin password to access the content manager.</p>
+                <p className="font-bricolage text-sm text-zinc-600">
+                  Sign in with an admin account to access the content manager.
+                </p>
+                <input
+                  type="email"
+                  value={adminEmail}
+                  onChange={(e) => {
+                    setAdminEmail(e.target.value);
+                    setAdminError('');
+                  }}
+                  placeholder="admin@robotron2027.com"
+                  disabled={adminLoading}
+                  className="w-full px-4 py-3 bg-[#f4ead5] comic-border-thick font-bricolage text-sm focus:outline-none focus:ring-2 focus:ring-[#bb0013] text-center disabled:opacity-50"
+                />
                 <input
                   type="password"
-                  value={adminPassInput}
+                  value={adminPassword}
                   onChange={(e) => {
-                    setAdminPassInput(e.target.value);
+                    setAdminPassword(e.target.value);
                     setAdminError('');
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !adminLoading) {
-                      verifyAdminPassword();
+                      verifyAdminLogin();
                     }
                   }}
-                  placeholder="Enter password"
+                  placeholder="Password"
                   disabled={adminLoading}
                   className="w-full px-4 py-3 bg-[#f4ead5] comic-border-thick font-bricolage text-sm focus:outline-none focus:ring-2 focus:ring-[#bb0013] text-center disabled:opacity-50"
                 />
@@ -256,12 +299,17 @@ export function App() {
                   <p className="text-[#bb0013] font-bricolage text-sm font-semibold">{adminError}</p>
                 )}
                 <button
-                  onClick={verifyAdminPassword}
+                  onClick={verifyAdminLogin}
                   disabled={adminLoading}
-                  className="w-full bg-[#bb0013] hover:bg-[#d90017] text-white font-anton text-xl py-3 comic-border-thick shadow-comic uppercase cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full bg-[#bb0013] hover:bg-[#d90017] text-white font-anton text-xl py-3 comic-border-thick shadow-comic uppercase cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
+                  {adminLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
                   {adminLoading ? 'VERIFYING...' : 'UNLOCK'}
                 </button>
+                <p className="font-bricolage text-xs text-zinc-500">
+                  Content writes require the admin custom claim. Grant it with
+                  {' '}<code className="font-bold">npm run set-admin -- you@example.com</code>.
+                </p>
               </div>
             </div>
           )

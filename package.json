@@ -8,7 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "set-admin": "tsx scripts/setAdminClaim.ts",
+    "deploy:rules": "firebase deploy --only firestore:rules"
   },
   "dependencies": {
     "@emailjs/browser": "^4.4.1",
@@ -29,6 +31,8 @@
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
+    "firebase-admin": "^12.7.0",
+    "firebase-tools": "^13.35.1",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",

@@ -5,6 +5,7 @@ import {
   signOut as firebaseSignOut,
   updateProfile,
   onAuthStateChanged,
+  getIdTokenResult,
   User,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
@@ -40,4 +41,15 @@ export async function signOut(): Promise<void> {
 
 export function getCurrentUser(): User | null {
   return auth.currentUser;
+}
+
+/**
+ * True when the signed-in user carries the `admin: true` custom claim set by
+ * scripts/setAdminClaim.ts. This mirrors the isAdmin() check in firestore.rules.
+ */
+export async function isAdminUser(): Promise<boolean> {
+  const user = auth.currentUser;
+  if (!user) return false;
+  const token = await getIdTokenResult(user, true);
+  return token.claims.admin === true;
 }

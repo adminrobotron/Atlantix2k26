@@ -196,7 +196,7 @@
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-app.js";
     import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore.js";
-    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
+    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, getIdTokenResult } from "https://www.gstatic.com/firebasejs/10.14.0/firebase-auth.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyCQKLM92UMnSb_ZLd7BZGgH6TNP9ugXffg",
@@ -214,6 +214,15 @@
     let siteContent = null;
 
     // === AUTH ===
+    // firestore.rules restricts siteContent writes to the `admin: true` custom
+    // claim, so a successful sign-in alone is not enough - the claim is checked
+    // and non-admins are signed back out.
+    async function hasAdminClaim(user) {
+        if (!user) return false;
+        const token = await getIdTokenResult(user, true);
+        return token.claims.admin === true;
+    }
+
     document.getElementById("loginBtn").onclick = async () => {
         const email = document.getElementById("loginEmail").value.trim();
         const pass = document.getElementById("loginPassword").value;
@@ -221,7 +230,11 @@
         errEl.classList.add("hidden");
         if (!email || !pass) { errEl.textContent = "Fill in all fields"; errEl.classList.remove("hidden"); return; }
         try {
-            await signInWithEmailAndPassword(auth, email, pass);
+            const cred = await signInWithEmailAndPassword(auth, email, pass);
+            if (await hasAdminClaim(cred.user)) return;
+            await signOut(auth);
+            errEl.textContent = "This account does not have admin access";
+            errEl.classList.remove("hidden");
         } catch (e) {
             errEl.textContent = "Invalid email or password";
             errEl.classList.remove("hidden");
@@ -230,13 +243,14 @@
 
     document.getElementById("loginPassword").onkeydown = (e) => { if (e.key === "Enter") document.getElementById("loginBtn").click(); };
 
-    onAuthStateChanged(auth, (user) => {
-        if (user) {
+    onAuthStateChanged(auth, async (user) => {
+        if (user && await hasAdminClaim(user)) {
             document.getElementById("loginScreen").classList.add("hidden");
             document.getElementById("dashboardScreen").classList.remove("hidden");
             document.getElementById("userEmail").textContent = user.email;
             loadContent();
         } else {
+            if (user) await signOut(auth);
             document.getElementById("loginScreen").classList.remove("hidden");
             document.getElementById("dashboardScreen").classList.add("hidden");
         }

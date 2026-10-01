@@ -4,3 +4,10 @@ dist/
 .env.local
 .env.*.local
 *.log
+
+# Firebase / service account keys must never be committed
+*service-account*.json
+*serviceAccount*.json
+firebase-debug.log
+firestore-debug.log
+.firebase/

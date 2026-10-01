@@ -1,0 +1,344 @@
+rules_version = '2';
+
+// Robotron 2027 - Firestore security rules
+//
+// Admin access is gated on a Firebase Auth custom claim `admin: true`.
+// Grant it with:  npx tsx scripts/setAdminClaim.ts <admin-email>
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- helpers -------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Custom claim set by scripts/setAdminClaim.ts
+    function isAdmin() {
+      return isSignedIn()
+        && request.auth.token.admin == true;
+    }
+
+    // The caller's own uid.
+    function myUid() {
+      return request.auth.uid;
+    }
+
+    function isLeaderOf(teamData) {
+      return isSignedIn()
+        && teamData.get('leader', null) is map
+        && teamData.leader.get('uid', '') == myUid();
+    }
+
+    // A member object as written by the app. Guards the PII fields so a user
+    // cannot append someone else's phone/DOB to a team.
+    // .get(key, default) is used throughout so that team docs created before
+    // the onboarding fields existed still evaluate instead of erroring.
+    function validMember(m) {
+      return m.keys().hasAll([
+          'uid', 'displayName', 'email', 'phone', 'branch', 'college',
+          'department', 'year', 'dob', 'diet', 'role', 'joinedAt'
+        ])
+        && m.keys().hasOnly([
+          'uid', 'displayName', 'email', 'phone', 'branch', 'college',
+          'department', 'year', 'dob', 'diet', 'role', 'joinedAt'
+        ])
+        && m.uid is string
+        && m.get('displayName', '') is string
+        && m.get('email', '') is string
+        && m.get('phone', '') is string
+        && m.get('branch', '') is string
+        && m.get('college', '') is string
+        && m.get('department', '') is string
+        && m.get('year', '') is string
+        && m.get('dob', '') is string
+        && m.get('diet', '') in ['', 'veg', 'non-veg']
+        && m.get('role', '') in ['leader', 'member']
+        && m.get('joinedAt', '') is string;
+    }
+
+    function validMembersList(members) {
+      return members is list
+        && members.size() >= 1
+        && members.size() <= 4
+        && members.where(m, validMember(m)).size() == members.size();
+    }
+
+    function validLeader(l) {
+      return l is map
+        && l.keys().hasOnly(['uid', 'displayName', 'email'])
+        && l.get('uid', '') is string
+        && l.get('displayName', '') is string
+        && l.get('email', '') is string;
+    }
+
+    // The full team document as created by src/services/team.ts.
+    function validTeam(data) {
+      return data.keys().hasAll([
+          'teamCode', 'teamName', 'leader', 'members',
+          'selectedTechEventId', 'selectedNonTechEventId',
+          'status', 'registrationId', 'maxMembers', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'teamCode', 'teamName', 'leader', 'members',
+          'selectedTechEventId', 'selectedNonTechEventId',
+          'status', 'registrationId', 'maxMembers', 'createdAt', 'updatedAt'
+        ])
+        && data.get('teamCode', '') is string
+        && data.get('teamName', '') is string
+        && validLeader(data.get('leader', null))
+        && validMembersList(data.get('members', []))
+        && data.get('selectedTechEventId', '') is string
+        && data.get('selectedNonTechEventId', '') is string
+        && data.get('status', '') in ['forming', 'registered']
+        && data.get('maxMembers', 0) is int
+        && data.get('maxMembers', 0) > 0
+        && data.get('maxMembers', 0) <= 4;
+    }
+
+    // ---- siteContent ---------------------------------------------------
+    // Single doc `siteContent/main` holding all editable site text.
+    // Public read (the whole site renders from it, signed out included),
+    // admin-only write.
+
+    match /siteContent/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ---- users ---------------------------------------------------------
+    // Doc id is the auth uid. Self-service read/write, with these constraints:
+    //  - email / uid / createdAt are immutable after creation
+    //  - profileCompleted can only be set to true when every detail is filled
+    //  - a team leader may clear another member's teamId
+    // NOTE: legacy docs created before the onboarding fields existed are
+    // tolerated via .get(key, default) everywhere.
+
+    match /users/{uid} {
+      allow get: if isSignedIn() && (myUid() == uid || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isSignedIn()
+        && myUid() == uid
+        && request.resource.data.keys().hasAll([
+          'uid', 'email', 'displayName', 'photoURL', 'phone', 'branch',
+          'college', 'department', 'year', 'dob', 'diet',
+          'profileCompleted', 'teamId', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.get('uid', '') == uid
+        && request.resource.data.get('profileCompleted', false) == false
+        && request.resource.data.get('teamId', null) == null
+        // the profile email must be the auth email, so a user cannot register
+        // a teammate's email and later pass ownership checks on it
+        && request.resource.data.get('email', '')
+             == request.auth.token.get('email', '');
+
+      allow update: if isAdmin()
+        || teamIdSetter(uid)
+        || (
+          myUid() == uid
+          // identity fields are immutable after creation
+          && request.resource.data.get('uid', uid) == uid
+          && request.resource.data.get('email', null) == resource.data.get('email', null)
+          && request.resource.data.get('createdAt', null) == resource.data.get('createdAt', null)
+          // a user may point their teamId at an existing team (createTeam /
+          // joinTeamByCode do this). This is not a privilege escalation: team
+          // docs are already readable by any signed-in user, so the worst case
+          // is a dashboard showing the wrong team.
+          && (
+            request.resource.data.get('teamId', null) == resource.data.get('teamId', null)
+            || teamExists(request.resource.data.get('teamId', null))
+          )
+          // cannot mark the profile complete while leaving fields blank
+          && (
+            request.resource.data.get('profileCompleted', false) == false
+            || (
+              request.resource.data.get('phone', '') != ''
+              && request.resource.data.get('dob', '') != ''
+              && request.resource.data.get('department', '') != ''
+              && request.resource.data.get('year', '') != ''
+              && request.resource.data.get('college', '') != ''
+              && request.resource.data.get('diet', '') in ['veg', 'non-veg']
+            )
+          )
+        );
+
+      allow delete: if myUid() == uid || isAdmin();
+    }
+
+    // True when the given team document exists.
+    function teamExists(teamId) {
+      return teamId is string
+        && exists(/databases/$(database)/documents/teams/$(teamId));
+    }
+
+    // True when the caller is a leader of the team the target user belongs to.
+    // Used to permit clearing that user's teamId.
+    // Guarded with exists() because a dangling teamId would make get() fail.
+    function teamIdSetter(uid) {
+      let userDoc = get(/databases/$(database)/documents/users/$(uid)).data;
+      let tid = userDoc.get('teamId', null);
+      return isSignedIn()
+        && tid is string
+        && exists(/databases/$(database)/documents/teams/$(tid))
+        && isLeaderOf(get(/databases/$(database)/documents/teams/$(tid)).data);
+    }
+
+    // ---- teams ---------------------------------------------------------
+    // Doc id is Firestore auto-generated. Ownership lives in `leader.uid`.
+
+    match /teams/{teamId} {
+      // teamCode lookup (join preview) and realtime subscription.
+      // Both expose member PII, so require the caller to be signed in.
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && request.resource.data.get('leader', null) is map
+        && request.resource.data.leader.uid == myUid()
+        && validTeam(request.resource.data)
+        && request.resource.data.get('members', []).size() == 1
+        && request.resource.data.members[0].uid == myUid()
+        && request.resource.data.members[0].role == 'leader'
+        // my member entry must not impersonate anyone else's email
+        && request.resource.data.members[0].email
+             == request.auth.token.get('email', '')
+        && request.resource.data.leader.email == request.resource.data.members[0].email
+        && request.resource.data.get('maxMembers', 0) == 4;
+
+      allow update: if isSignedIn() && (
+        isLeaderOf(resource.data)
+        || isAdmin()
+        // joining: exactly one member appended, and it must be me
+        || isJoiningTeam(resource.data, request.resource.data)
+      );
+
+      allow delete: if isAdmin()
+        || (isSignedIn() && isLeaderOf(resource.data));
+    }
+
+    // joinTeamByCode appends the caller to `members` and nothing else.
+    // The existing prefix must be untouched, so a joiner cannot rewrite
+    // anyone else's details or evict an existing member.
+    function isJoiningTeam(oldTeam, newTeam) {
+      let oldMembers = oldTeam.get('members', []);
+      let newMembers = newTeam.get('members', []);
+      let n = newMembers.size();
+      return oldTeam.get('maxMembers', 4) == newTeam.get('maxMembers', 4)
+        && n == oldMembers.size() + 1
+        && n <= newTeam.get('maxMembers', 4)
+        && validMembersList(newMembers)
+        // the appended member must be me, tagged as a member
+        && newMembers[n - 1].uid == myUid()
+        && newMembers[n - 1].role == 'member'
+        // every pre-existing member survives byte-for-byte
+        && newMembers.slice(0, oldMembers.size()) == oldMembers
+        // everything else on the doc is immutable via this path
+        && newTeam.diff(oldTeam).affectedKeys().hasOnly(['members', 'updatedAt']);
+    }
+
+    // ---- registrations -------------------------------------------------
+    // Doc id is a random client string ('AUTO######') with no owner field, so
+    // ownership cannot be derived from the id. Instead: a team member (matched
+    // by email) may read their own registration and tick check-in; full access
+    // is admin-only. The check-in scanner (public/scanner.html) is admin-gated
+    // because gate staff do not have a member account.
+
+    match /registrations/{regId} {
+      allow read: if isAdmin() || isRegistrationOwner();
+
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasAll([
+          'registrationId', 'teamId', 'teamCode', 'teamLead', 'leadEmail',
+          'members', 'technicalEvent', 'additionalEvent', 'amount',
+          'checkedIn', 'timestamp'
+        ])
+        && request.resource.data.get('registrationId', '') == regId
+        // nobody may self-mark as already checked in at creation time
+        && request.resource.data.get('checkedIn', false) == false
+        && request.resource.data.get('amount', 0) is number
+        && request.resource.data.get('members', null) is list
+        && request.resource.data.members.size() >= 1
+        && request.resource.data.members.size() <= 4
+        && request.resource.data.members.where(m, validRegMember(m)).size()
+             == request.resource.data.members.size()
+        // at least one member must be me, and I must not be checked in yet
+        && request.resource.data.members.where(m,
+             m.get('email', '') == request.auth.token.get('email', '')
+             && m.get('checkedIn', false) == false).size() > 0;
+
+      // Check-in (scanner.html) flips members[].checkedIn and the top-level
+      // flag. Non-admins may only do this on their own registration, and may
+      // not alter identity/PII columns while doing it. Admins may do anything.
+      allow update: if isAdmin()
+        || (
+          isSignedIn()
+          && isRegistrationOwner()
+          && request.resource.data.get('checkedIn', false) is bool
+          && request.resource.data.get('members', null) is list
+          && request.resource.data.get('members', []).size()
+               == resource.data.get('members', []).size()
+          // same member rows, same order, same identities - only checkedIn moves
+          && request.resource.data.members
+               .map(m, {
+                 'memberId': m.get('memberId', ''),
+                 'email': m.get('email', ''),
+                 'name': m.get('name', '')
+               })
+             == resource.data.members
+               .map(m, {
+                 'memberId': m.get('memberId', ''),
+                 'email': m.get('email', ''),
+                 'name': m.get('name', '')
+               })
+          && validRegMembers(request.resource.data.get('members', []))
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // A registration member row as written by src/services/registration.ts.
+    function validRegMember(m) {
+      return m.keys().hasAll([
+          'name', 'email', 'phone', 'branch', 'college', 'dob', 'year',
+          'diet', 'memberId', 'checkedIn'
+        ])
+        && m.keys().hasOnly([
+          'name', 'email', 'phone', 'branch', 'college', 'dob', 'year',
+          'diet', 'memberId', 'checkedIn'
+        ])
+        && m.get('name', '') is string
+        && m.get('email', '') is string
+        && m.get('phone', '') is string
+        && m.get('branch', '') is string
+        && m.get('college', '') is string
+        && m.get('dob', '') is string
+        && m.get('year', '') is string
+        && m.get('diet', '') in ['', 'veg', 'non-veg']
+        && m.get('memberId', '') is string
+        && m.get('checkedIn', false) is bool;
+    }
+
+    function validRegMembers(members) {
+      return members is list
+        && members.size() >= 1
+        && members.size() <= 4
+        && members.where(m, validRegMember(m)).size() == members.size();
+    }
+
+    // The caller is listed as a member of this registration.
+    // Uses `resource` (not `request.resource`) so it is valid for reads.
+    function isRegistrationOwner() {
+      return isSignedIn()
+        && resource.data.get('members', null) is list
+        && resource.data.get('members', [])
+          .where(m, m.get('email', '') == request.auth.token.get('email', ''))
+          .size() > 0;
+    }
+
+    // ---- default deny --------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
