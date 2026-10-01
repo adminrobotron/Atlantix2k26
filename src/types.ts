@@ -139,6 +139,8 @@ export interface Team {
   updatedAt: Timestamp;
 }
 
+export type DietPreference = 'veg' | 'non-veg';
+
 export interface UserProfile {
   uid: string;
   email: string;
@@ -147,6 +149,11 @@ export interface UserProfile {
   phone: string;
   branch: string;
   college: string;
+  department: string;
+  year: string;
+  dob: string;
+  diet: DietPreference | '';
+  profileCompleted: boolean;
   teamId: string | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;

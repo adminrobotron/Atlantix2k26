@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavTab } from './types';
 import { ALL_EVENTS } from './data/events';
 import { useAuth } from './hooks/useAuth';
 import { useTeam } from './hooks/useTeam';
 import { signOut } from './services/auth';
+import { isProfileComplete } from './services/userProfile';
 import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { HomeView } from './components/HomeView';
@@ -12,13 +13,14 @@ import { EventsView } from './components/EventsView';
 import { ScheduleView } from './components/ScheduleView';
 import { PrizesView } from './components/PrizesView';
 import { AuthView } from './components/AuthView';
+import { OnboardingForm } from './components/OnboardingForm';
 import { TeamDashboard } from './components/TeamDashboard';
 import { AdminView } from './components/AdminView';
 import { EventDetailModal } from './components/EventDetailModal';
 import { Save, Loader2, CheckCircle2, Eye, Undo2, Redo2 } from 'lucide-react';
 
 export function App() {
-  const { user, userProfile, loading: authLoading } = useAuth();
+  const { user, userProfile, loading: authLoading, refreshProfile } = useAuth();
   const { team, loading: teamLoading, refresh: refreshTeam } = useTeam(user, userProfile);
   const [activeTab, setActiveTab] = useState<NavTab>('home');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -41,6 +43,14 @@ export function App() {
   } | null>(null);
 
   const selectedEvent = ALL_EVENTS.find(e => e.id === selectedEventId);
+
+  const needsOnboarding = !!user && !!userProfile && !isProfileComplete(userProfile);
+
+  useEffect(() => {
+    if (needsOnboarding && activeTab !== 'register') {
+      setActiveTab('register');
+    }
+  }, [needsOnboarding, activeTab]);
 
   const handleSelectEventModal = (eventId: string) => {
     setSelectedEventId(eventId);
@@ -98,6 +108,22 @@ export function App() {
     }
     if (!user) {
       return <AuthView />;
+    }
+    if (!userProfile) {
+      return (
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <Loader2 className="w-8 h-8 animate-spin text-[#bb0013]" />
+        </div>
+      );
+    }
+    if (needsOnboarding) {
+      return (
+        <OnboardingForm
+          user={user}
+          userProfile={userProfile}
+          onComplete={refreshProfile}
+        />
+      );
     }
     if (teamLoading) {
       return (

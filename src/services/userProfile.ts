@@ -12,6 +12,11 @@ export async function createUserProfile(user: User): Promise<UserProfile> {
     phone: '',
     branch: '',
     college: '',
+    department: '',
+    year: '',
+    dob: '',
+    diet: '',
+    profileCompleted: false,
     teamId: null,
     createdAt: serverTimestamp() as any,
     updatedAt: serverTimestamp() as any,
@@ -30,4 +35,17 @@ export async function updateUserProfile(
   data: Partial<UserProfile>
 ): Promise<void> {
   await setDoc(doc(db, 'users', uid), { ...data, updatedAt: serverTimestamp() }, { merge: true });
+}
+
+export function isProfileComplete(profile: UserProfile | null): boolean {
+  if (!profile) return false;
+  if (profile.profileCompleted) return true;
+  return (
+    !!profile.dob &&
+    !!profile.diet &&
+    !!profile.year &&
+    !!profile.department &&
+    !!profile.phone &&
+    !!profile.college
+  );
 }
