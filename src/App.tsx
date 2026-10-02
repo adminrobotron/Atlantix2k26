@@ -82,16 +82,8 @@ export function App() {
   // the `admin: true` custom claim. So the panel needs a real Firebase session
   // carrying that claim, not just the shared password.
   useEffect(() => {
-    let cancelled = false;
     if (authLoading) return;
-    if (user) {
-      isAdminUser().then((isAdmin) => {
-        if (!cancelled) setAdminUnlocked(isAdmin);
-      });
-    } else {
-      setAdminUnlocked(false);
-    }
-    return () => { cancelled = true; };
+    setAdminUnlocked(isAdminUser(user));
   }, [user, authLoading]);
 
   const verifyAdminLogin = async () => {
@@ -102,8 +94,8 @@ export function App() {
     setAdminLoading(true);
     setAdminError('');
     try {
-      await signInWithEmail(adminEmail.trim(), adminPassword);
-      const isAdmin = await isAdminUser();
+      const admin = await signInWithEmail(adminEmail.trim(), adminPassword);
+      const isAdmin = isAdminUser(admin);
       if (isAdmin) {
         setAdminUnlocked(true);
         setAdminPassword('');

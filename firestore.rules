@@ -2,8 +2,11 @@ rules_version = '2';
 
 // Robotron 2027 - Firestore security rules
 //
-// Admin access is gated on a Firebase Auth custom claim `admin: true`.
-// Grant it with:  npx tsx scripts/setAdminClaim.ts <admin-email>
+// Admin access is gated on a UID allowlist below. To add an admin, append
+// their Firebase Auth UID here and redeploy:
+//   npx firebase deploy --only firestore:rules
+//
+// To find a UID: Firebase console -> Authentication -> Users -> the account.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -13,10 +16,13 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Custom claim set by scripts/setAdminClaim.ts
+    // Admin identities. Keep in sync with ADMIN_UIDS in src/services/auth.ts.
     function isAdmin() {
       return isSignedIn()
-        && request.auth.token.admin == true;
+        && request.auth.uid in [
+          // Firebase console -> Authentication -> Users -> UID
+          'REPLACE_WITH_ADMIN_UID',
+        ];
     }
 
     // The caller's own uid.

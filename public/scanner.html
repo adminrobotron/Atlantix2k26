@@ -385,8 +385,7 @@
             getAuth,
             signInWithEmailAndPassword,
             onAuthStateChanged,
-            signOut,
-            getIdTokenResult
+            signOut
         } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
 
         const firebaseConfig = {
@@ -431,10 +430,15 @@
             if (message) showAuthError(message);
         }
 
-        async function hasAdminClaim(user) {
-            if (!user) return false;
-            const token = await getIdTokenResult(user, true);
-            return token.claims.admin === true;
+        // Firebase Auth UIDs allowed to use the scanner.
+        // Mirrors the ADMIN_UIDS list in firestore.rules - keep both in sync.
+        const ADMIN_UIDS = [
+            // Firebase console -> Authentication -> Users -> UID
+            'REPLACE_WITH_ADMIN_UID',
+        ];
+
+        function isAdmin(user) {
+            return !!user && ADMIN_UIDS.includes(user.uid);
         }
 
         authBtn.addEventListener('click', async () => {
@@ -449,7 +453,7 @@
             authBtn.textContent = 'VERIFYING...';
             try {
                 const cred = await signInWithEmailAndPassword(auth, email, password);
-                if (await hasAdminClaim(cred.user)) {
+                if (isAdmin(cred.user)) {
                     passwordInput.value = '';
                     onUnlocked();
                 } else {
@@ -471,11 +475,11 @@
         });
 
         // Enforce the gate on every page load, not just via the button.
-        onAuthStateChanged(auth, async (user) => {
-            if (user && await hasAdminClaim(user)) {
+        onAuthStateChanged(auth, (user) => {
+            if (isAdmin(user)) {
                 onUnlocked();
             } else {
-                if (user) await signOut(auth);
+                if (user) signOut(auth);
                 onLocked();
             }
         });

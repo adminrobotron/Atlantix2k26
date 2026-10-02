@@ -5,7 +5,6 @@ import {
   signOut as firebaseSignOut,
   updateProfile,
   onAuthStateChanged,
-  getIdTokenResult,
   User,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../firebase';
@@ -44,12 +43,18 @@ export function getCurrentUser(): User | null {
 }
 
 /**
- * True when the signed-in user carries the `admin: true` custom claim set by
- * scripts/setAdminClaim.ts. This mirrors the isAdmin() check in firestore.rules.
+ * Firebase Auth UIDs allowed to use the CMS and the scanner.
+ * Mirrors the ADMIN_UIDS list in firestore.rules - keep both in sync.
  */
-export async function isAdminUser(): Promise<boolean> {
-  const user = auth.currentUser;
-  if (!user) return false;
-  const token = await getIdTokenResult(user, true);
-  return token.claims.admin === true;
+export const ADMIN_UIDS = [
+  // Firebase console -> Authentication -> Users -> UID
+  'REPLACE_WITH_ADMIN_UID',
+];
+
+/**
+ * True when the signed-in user is on the admin allowlist. This mirrors the
+ * isAdmin() check in firestore.rules, which is what actually enforces access.
+ */
+export function isAdminUser(user: User | null = auth.currentUser): boolean {
+  return !!user && ADMIN_UIDS.includes(user.uid);
 }
