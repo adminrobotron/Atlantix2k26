@@ -16,12 +16,12 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Admin identities. Keep in sync with ADMIN_UIDS in src/services/auth.ts.
+    // Admin identities. Keep in sync with ADMIN_UIDS in src/services/auth.ts,
+    // public/admin.html and public/scanner.html.
     function isAdmin() {
       return isSignedIn()
         && request.auth.uid in [
-          // Firebase console -> Authentication -> Users -> UID
-          'REPLACE_WITH_ADMIN_UID',
+          'jX9wljERWsgpJtRB1NyeFl1fnWv1',
         ];
     }
 

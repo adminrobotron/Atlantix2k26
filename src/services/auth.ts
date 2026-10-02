@@ -47,8 +47,7 @@ export function getCurrentUser(): User | null {
  * Mirrors the ADMIN_UIDS list in firestore.rules - keep both in sync.
  */
 export const ADMIN_UIDS = [
-  // Firebase console -> Authentication -> Users -> UID
-  'REPLACE_WITH_ADMIN_UID',
+  'jX9wljERWsgpJtRB1NyeFl1fnWv1',
 ];
 
 /**
